@@ -1,0 +1,68 @@
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Float32
+from geometry_msgs.msg import Twist
+import time
+
+class Go2FrontAvoid(Node):
+    def __init__(self):
+        super().__init__('go2_front_avoid')
+        self.sub = self.create_subscription(
+            Float32,
+            '/utlidar/range_info',  # pastikan sesuai dengan topik Go2 kamu
+            self.lidar_callback,
+            10
+        )
+        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+
+        # Threshold jarak depan (meter)
+        self.front_thresh = 0.8
+        # Flag untuk menghindari perintah berulang
+        self.turning = False
+
+    def lidar_callback(self, msg):
+        distance = msg.data
+        twist = Twist()
+
+        if distance < self.front_thresh and not self.turning:
+            self.get_logger().info(f"🚧 Object detected at {distance:.2f} m — turning back.")
+            self.turning = True
+
+            # 1️⃣ Berhenti sebentar
+            twist.linear.x = 0.0
+            self.cmd_pub.publish(twist)
+            time.sleep(0.5)
+
+            # 2️⃣ Putar 180 derajat (durasi tergantung robot)
+            twist.angular.z = 1.5
+            self.cmd_pub.publish(twist)
+            time.sleep(2.1)  # sesuaikan durasi untuk rotasi penuh 180°
+
+            # 3️⃣ Stop rotasi
+            twist.angular.z = 0.0
+            self.cmd_pub.publish(twist)
+            time.sleep(0.3)
+
+            # 4️⃣ Lanjut jalan lurus
+            twist.linear.x = 0.3
+            self.cmd_pub.publish(twist)
+            self.get_logger().info("✅ Turning complete — moving forward again.")
+            self.turning = False
+
+        elif not self.turning:
+            twist.linear.x = 0.3  # jalan maju
+            self.cmd_pub.publish(twist)
+            self.get_logger().info(f"Moving forward — distance: {distance:.2f} m")
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = Go2FrontAvoid()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
